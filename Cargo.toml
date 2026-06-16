@@ -1,0 +1,33 @@
+[package]
+name = "rust-hwbench"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.80"
+license = "MIT OR Apache-2.0"
+description = "Cross-platform CPU/GPU/RAM/VRAM hardware benchmark library and CLI: FP32/FP64/FP16/INT32 compute, STREAM memory bandwidth, and cache-latency probes built on wgpu and rayon."
+repository = "https://github.com/hewcarroll/rust-hwbench"
+readme = "README.md"
+keywords = ["benchmark", "gpu", "cpu", "wgpu", "hardware"]
+categories = ["hardware-support", "command-line-utilities"]
+exclude = ["/.github"]
+
+[lib]
+name = "rust_hwbench"
+path = "src/lib.rs"
+
+[[bin]]
+name = "rust-hwbench"
+path = "src/bin/rust-hwbench.rs"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+rayon = "1.10"
+wgpu = "24"
+sysinfo = "0.33"
+bytemuck = "1"
+pollster = "0.4"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
