@@ -374,6 +374,10 @@ async fn run_f16(
     queue.write_buffer(&buf_b, 0, bytemuck::cast_slice(&b_f16));
     queue.write_buffer(&buf_params, 0, bytemuck::cast_slice(&params_data[..]));
 
+    // A device can advertise SHADER_F16 while the shader compiler still rejects
+    // `enable f16;` (wgpu 24's Naga does). Catch that instead of panicking, and
+    // report FP16 as unavailable.
+    device.push_error_scope(wgpu::ErrorFilter::Validation);
     let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some("FP16 Shader"),
         source: wgpu::ShaderSource::Wgsl(SHADER_F16.into()),
@@ -412,6 +416,9 @@ async fn run_f16(
         compilation_options: Default::default(),
         cache: None,
     });
+    if device.pop_error_scope().await.is_some() {
+        return None;
+    }
 
     let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
         label: None,

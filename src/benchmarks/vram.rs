@@ -58,7 +58,8 @@ pub async fn run(config: VramConfig) -> Result<BenchmarkResultPayload, String> {
     let buf_src = device.create_buffer(&wgpu::BufferDescriptor {
         label: Some("Src"),
         size: buffer_bytes,
-        usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+        // COPY_SRC: the device->host test reads this buffer back.
+        usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::COPY_SRC,
         mapped_at_creation: false,
     });
     let buf_dst = device.create_buffer(&wgpu::BufferDescriptor {
