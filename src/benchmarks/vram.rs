@@ -223,6 +223,10 @@ pub async fn run(config: VramConfig) -> Result<BenchmarkResultPayload, String> {
 
     let download = bandwidth_summary(buffer_bytes as f64, &download_durations);
 
+    if internal.n == 0 {
+        return Err("no valid internal bandwidth measurements".to_string());
+    }
+
     Ok(BenchmarkResultPayload {
         component_type: "GPU_MEMORY".to_string(),
         score: None,

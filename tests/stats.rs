@@ -147,3 +147,48 @@ fn vram_median_is_the_median_of_per_run_rates() {
     let s = vram::bandwidth_summary(1e9, &[f64::INFINITY, 0.0, -1.0, f64::NAN, 1.0]);
     assert_eq!((s.n, s.median), (1, 1.0));
 }
+
+// ---- Round 2 review (Codex) ----
+
+#[test]
+fn cv_does_not_overflow_when_it_is_finite() {
+    let s = summarize(&[1e308, 1.7e308]);
+    assert!((s.cv_percent - 36.664_796).abs() < 1e-4, "cv {}", s.cv_percent);
+}
+
+#[test]
+fn midpoint_survives_subnormal_values() {
+    let tiny = f64::from_bits(1);
+    let s = summarize(&[tiny; 6]);
+    assert_eq!(s.median, tiny);
+    assert!(s.median_ci_95[0] <= s.median && s.median <= s.median_ci_95[1]);
+}
+
+#[test]
+fn rejected_measurements_are_not_counted() {
+    // measure_timed keeps every attempt in `values`, but `n` counts accepted ones.
+    let stats = rust_hwbench::measure_timed(|| f64::NAN, 0, 6, 6, 0.0);
+    assert_eq!((stats.values.len(), stats.n), (6, 0));
+}
+
+#[test]
+fn no_score_interval_without_a_valid_median_interval() {
+    use rust_hwbench::{score_interval, BenchmarkResultPayload};
+    let r = BenchmarkResultPayload {
+        component_type: "GPU_MEMORY".into(),
+        score: None,
+        score_ci_95: None,
+        metrics: vec![],
+        run_count: 5,
+        warmup_count: 0,
+        median_raw: 200.0,
+        std_dev: 0.0,
+        cv_percent: 0.0,
+        median_ci_95: [50.0, 400.0],
+        median_ci_valid: false,
+        started_at_unix_ms: 0,
+        duration_ms: 0,
+        error: None,
+    };
+    assert_eq!(score_interval(&r), None, "a min-max range is not a 95% interval");
+}

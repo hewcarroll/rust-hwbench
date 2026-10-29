@@ -136,6 +136,10 @@ pub fn run(config: RamConfig) -> Result<BenchmarkResultPayload, String> {
         TARGET_SECS,
     );
 
+    if triad_stats.n == 0 {
+        return Err("no valid Triad measurements".to_string());
+    }
+
     Ok(BenchmarkResultPayload {
         component_type: "RAM".to_string(),
         score: None,
@@ -172,7 +176,7 @@ pub fn run(config: RamConfig) -> Result<BenchmarkResultPayload, String> {
                 description: "Total test buffer per array".to_string(),
             },
         ],
-        run_count: triad_stats.values.len(),
+        run_count: triad_stats.n,
         warmup_count: WARMUP,
         median_raw: round2(triad_stats.median),
         std_dev: round2(triad_stats.std_dev),

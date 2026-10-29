@@ -245,6 +245,9 @@ pub fn run(config: CpuConfig) -> Result<BenchmarkResultPayload, String> {
     };
 
     // Score and statistics stay pinned to single-core FP32 for comparability.
+    if fp32_single.n == 0 {
+        return Err("no valid single-core FP32 measurements".to_string());
+    }
 
     Ok(BenchmarkResultPayload {
         component_type: "CPU".to_string(),
@@ -263,7 +266,7 @@ pub fn run(config: CpuConfig) -> Result<BenchmarkResultPayload, String> {
             metric("L3 R-Lat", round2(l3_latency), "ns", "L3 cache random access latency"),
             metric("Memory R-Lat", round2(mem_latency), "ns", "Main memory random access latency"),
         ],
-        run_count: fp32_single.values.len(),
+        run_count: fp32_single.n,
         warmup_count: WARMUP,
         median_raw: round2(fp32_single.median),
         std_dev: round2(fp32_single.std_dev),

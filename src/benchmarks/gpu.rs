@@ -144,6 +144,10 @@ pub async fn run(config: GpuConfig) -> Result<BenchmarkResultPayload, String> {
     }
     metrics.push(metric("INT32 Compute", round2(int32.median), "TOPS", "INT32 multiply-add throughput"));
 
+    if fp32.n == 0 {
+        return Err("no valid FP32 compute measurements".to_string());
+    }
+
     Ok(BenchmarkResultPayload {
         component_type: "GPU".to_string(),
         score: None,

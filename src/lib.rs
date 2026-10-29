@@ -56,8 +56,14 @@ pub fn score(result: &BenchmarkResultPayload) -> Option<u64> {
 
 /// The score's own 95% interval: each end of `median_ci_95` mapped through the
 /// same calibration as [`score`]. Calibration never decreases, so the interval
-/// contains the score. `None` for component types without a calibrated scale.
+/// contains the score, and it carries the raw interval's assumptions (see
+/// [`Summary::median_ci_95`]). `None` for component types without a calibrated
+/// scale, and when `median_ci_valid` is false: a min–max range from too few runs
+/// isn't a 95% interval.
 pub fn score_interval(result: &BenchmarkResultPayload) -> Option<[u64; 2]> {
+    if !result.median_ci_valid {
+        return None;
+    }
     let anchors = anchors_for(&result.component_type)?;
     Some([calibrate(result.median_ci_95[0], anchors), calibrate(result.median_ci_95[1], anchors)])
 }

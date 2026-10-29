@@ -131,7 +131,10 @@ fn stats_from(values: Vec<f64>) -> MeasurementStats {
 
 #[derive(Debug, Clone)]
 pub struct MeasurementStats {
+    /// Statistics of the accepted (finite) measurements; `summary.n` counts them.
     pub summary: Summary,
+    /// Every measurement taken, in order, including any non-finite ones the
+    /// summary left out. Report `n`, not `values.len()`, as the run count.
     pub values: Vec<f64>,
 }
 
@@ -177,8 +180,7 @@ pub fn summarize(values: &[f64]) -> Summary {
     }
     v.sort_by(f64::total_cmp);
     let n = v.len();
-    // Halve before adding, so two huge values can't overflow their midpoint.
-    let median = if n % 2 == 1 { v[n / 2] } else { v[n / 2 - 1] / 2.0 + v[n / 2] / 2.0 };
+    let median = if n % 2 == 1 { v[n / 2] } else { midpoint(v[n / 2 - 1], v[n / 2]) };
     // Welford's running mean and sum of squares, on values scaled into [-1, 1]
     // so neither can overflow while the result is still representable.
     let scale = v.iter().fold(0.0_f64, |m, x| m.max(x.abs()));
@@ -191,13 +193,22 @@ pub fn summarize(values: &[f64]) -> Summary {
         m2_s += d * (x - mean_s);
     }
     let mean = mean_s * scale;
-    let std_dev = if n > 1 { (m2_s / (n - 1) as f64).sqrt() * scale } else { 0.0 };
-    let cv_percent = if mean != 0.0 { 100.0 * std_dev / mean.abs() } else { 0.0 };
+    let sd_s = if n > 1 { (m2_s / (n - 1) as f64).sqrt() } else { 0.0 };
+    let std_dev = sd_s * scale;
+    // From the scaled values, so it stays finite whenever the ratio is.
+    let cv_percent = if mean_s != 0.0 { 100.0 * (sd_s / mean_s.abs()) } else { 0.0 };
     let (median_ci_95, ci_valid) = match median_ci_ranks(n) {
         Some((lo, hi)) => ([v[lo - 1], v[hi - 1]], true),
         None => ([v[0], v[n - 1]], false),
     };
     Summary { n, median, mean, std_dev, cv_percent, min: v[0], max: v[n - 1], median_ci_95, ci_valid }
+}
+
+/// The midpoint of two finite values without overflow (two huge values) or
+/// underflow (two subnormal ones).
+fn midpoint(a: f64, b: f64) -> f64 {
+    let sum = a + b;
+    if sum.is_finite() { sum / 2.0 } else { a / 2.0 + b / 2.0 }
 }
 
 /// 1-based ranks `(l, n - l + 1)` of the order statistics bounding a 95%
