@@ -15,8 +15,8 @@
 //!
 //! Each `run` returns the measured throughput/bandwidth plus summary statistics
 //! of the primary metric's per-run values ([`Summary`]): the median, sample
-//! standard deviation, coefficient of variation and a distribution-free 95%
-//! interval for the median. The [`BenchmarkResultPayload::score`] field is `None`
+//! standard deviation, coefficient of variation and a 95% interval for the
+//! median from order statistics (see [`Summary::median_ci_95`] for its assumptions). The [`BenchmarkResultPayload::score`] field is `None`
 //! by default. Mapping a result onto an opinionated 0–10000 scale is opt-in via
 //! [`score`] or [`apply_score`] (or call [`calibrate`] directly against the exported anchor tables,
 //! e.g. [`benchmarks::cpu::CPU_ANCHORS`]).

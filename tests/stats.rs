@@ -101,3 +101,49 @@ fn vram_bandwidth_is_summarized_in_gb_per_s() {
     assert!(s.mean > 300.0 && s.mean < 400.0, "mean {}", s.mean);
     assert!(s.median_ci_95[0] <= s.median && s.median <= s.median_ci_95[1], "{s:?}");
 }
+
+// ---- Round 1 review (Codex): reproduce each finding before fixing it ----
+
+#[test]
+fn large_n_interval_has_exact_ranks() {
+    // Exact binomial ranks for n = 2682 (checked independently): 1290th and 1393rd.
+    let v: Vec<f64> = (1..=2682).map(f64::from).collect();
+    assert_eq!(summarize(&v).median_ci_95, [1290.0, 1393.0]);
+}
+
+#[test]
+fn singleton_pair_and_all_equal() {
+    let s = summarize(&[7.0]);
+    assert_eq!((s.n, s.median, s.std_dev, s.ci_valid), (1, 7.0, 0.0, false));
+    let s = summarize(&[1.0, 3.0]);
+    assert_eq!((s.median, s.ci_valid, s.median_ci_95), (2.0, false, [1.0, 3.0]));
+    let s = summarize(&[5.0; 10]);
+    assert_eq!((s.median, s.std_dev, s.cv_percent, s.median_ci_95), (5.0, 0.0, 0.0, [5.0, 5.0]));
+}
+
+#[test]
+fn non_finite_values_are_left_out() {
+    // NaN and infinities are not measurements: they're dropped and counted out of n.
+    let s = summarize(&[f64::NAN; 6]);
+    assert_eq!((s.n, s.median, s.ci_valid), (0, 0.0, false));
+    let s = summarize(&[1.0, 2.0, f64::NAN, 3.0, f64::INFINITY, 4.0, 5.0, f64::NEG_INFINITY, 6.0]);
+    assert_eq!((s.n, s.median, s.median_ci_95, s.ci_valid), (6, 3.5, [1.0, 6.0], true));
+    assert!(s.std_dev.is_finite() && s.cv_percent.is_finite());
+}
+
+#[test]
+fn huge_finite_values_do_not_overflow() {
+    let s = summarize(&[1e308; 6]);
+    assert_eq!((s.median, s.mean, s.std_dev, s.cv_percent), (1e308, 1e308, 0.0, 0.0));
+    let s = summarize(&[1e308, 1.7e308]);
+    assert!(s.median.is_finite() && s.mean.is_finite() && s.std_dev.is_finite(), "{s:?}");
+}
+
+#[test]
+fn vram_median_is_the_median_of_per_run_rates() {
+    // 1 GB in 1 s and in 2 s: rates 1.0 and 0.5 GB/s, median 0.75 (0.1.0 reported 0.5).
+    assert_eq!(vram::bandwidth_summary(1e9, &[1.0, 2.0]).median, 0.75);
+    // Infinite, zero, negative and NaN durations are not runs.
+    let s = vram::bandwidth_summary(1e9, &[f64::INFINITY, 0.0, -1.0, f64::NAN, 1.0]);
+    assert_eq!((s.n, s.median), (1, 1.0));
+}

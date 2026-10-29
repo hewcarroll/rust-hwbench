@@ -270,7 +270,8 @@ pub async fn run(config: VramConfig) -> Result<BenchmarkResultPayload, String> {
 /// GB/s first, so the median, spread and interval all describe the same GB/s
 /// sample. (0.1.0 took the spread over the durations, which rounded to 0.)
 pub fn bandwidth_summary(bytes_per_run: f64, durations_secs: &[f64]) -> Summary {
-    let gbps: Vec<f64> = durations_secs.iter().filter(|d| **d > 0.0).map(|d| bytes_per_run / d / 1e9).collect();
+    // Only finite, positive durations are runs; summarize drops any rate that overflows.
+    let gbps: Vec<f64> = durations_secs.iter().filter(|d| d.is_finite() && **d > 0.0).map(|d| bytes_per_run / d / 1e9).collect();
     summarize(&gbps)
 }
 

@@ -57,3 +57,23 @@ fn score_interval_contains_the_score() {
     assert!(lo <= s && s <= hi, "score {s} outside [{lo}, {hi}]");
     assert!(r.median_ci_95[0] <= r.median_raw && r.median_raw <= r.median_ci_95[1]);
 }
+
+#[test]
+fn json_uses_the_0_2_field_names_and_timed_fills_timing() {
+    let r = rust_hwbench::timed(|| {
+        ram::run(RamConfig {
+            buffer_size_mb: Some(8),
+            thread_count: None,
+        })
+    })
+    .unwrap();
+    assert!(r.started_at_unix_ms > 1_700_000_000_000, "start time should be set");
+    assert!(r.duration_ms > 0, "duration should be set");
+    let json = serde_json::to_value(&r).unwrap();
+    for key in ["medianRaw", "stdDev", "cvPercent", "medianCi95", "medianCiValid", "scoreCi95", "startedAtUnixMs", "durationMs"] {
+        assert!(json.get(key).is_some(), "missing JSON key {key}");
+    }
+    for old in ["variance", "confidenceInterval"] {
+        assert!(json.get(old).is_none(), "0.1.0 key {old} should be gone");
+    }
+}

@@ -65,11 +65,16 @@ in that metric's own unit:
 - `medianRaw`: the median, averaging the two middle runs when the count is even
 - `stdDev` and `cvPercent`: the sample standard deviation (n − 1), and the same
   thing as a percentage of the mean
-- `medianCi95`: a distribution-free 95% confidence interval **for the median**,
-  from order statistics. It assumes nothing about the shape of the runs, so it
-  holds when they're skewed by throttling or scheduler noise, and it always
-  contains the median. With fewer than 6 runs no such interval exists; it is then
-  the min–max range and `medianCiValid` is `false`.
+- `medianCi95`: a 95% confidence interval **for the median**, from order
+  statistics. It always contains the median of the runs. It covers the true
+  median at least 95% of the time when the runs are independent draws from one
+  stable distribution, whatever its shape; it does not account for drift,
+  throttling that changes during the run, or differences between separate runs,
+  which on a real machine can be larger than one run's interval. With fewer than
+  6 runs no such interval exists; it is then the min–max range and
+  `medianCiValid` is `false` (`true` means enough runs, not that the assumptions
+  hold).
+- Non-finite measurements (NaN, infinities) are left out and not counted.
 - `startedAtUnixMs` and `durationMs`: filled in when the run is wrapped in `timed`
   (the CLI does this)
 

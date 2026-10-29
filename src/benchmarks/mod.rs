@@ -33,9 +33,10 @@ pub struct BenchmarkResultPayload {
     pub std_dev: f64,
     /// `std_dev` as a percentage of the mean, comparable across units.
     pub cv_percent: f64,
-    /// Distribution-free 95% interval for `median_raw` (order statistics); it
-    /// always contains the median. Equal to [min, max] when there are too few
-    /// runs for a 95% interval, which `median_ci_valid` reports.
+    /// 95% interval for `median_raw` from order statistics (see
+    /// [`Summary::median_ci_95`] for what it does and doesn't promise). It always
+    /// contains `median_raw`; it is [min, max] when there were too few runs for a
+    /// 95% interval, which `median_ci_valid` reports.
     pub median_ci_95: [f64; 2],
     pub median_ci_valid: bool,
     /// When the benchmark started (Unix ms) and how long it took. Set by
@@ -154,30 +155,43 @@ pub struct Summary {
     pub cv_percent: f64,
     pub min: f64,
     pub max: f64,
-    /// Distribution-free 95% interval for the median from order statistics. It
-    /// makes no assumption about the shape of the runs, so it holds when they
-    /// are skewed (throttling, scheduler noise), and it always contains `median`.
+    /// 95% interval for the median from order statistics. It always contains
+    /// `median`, the median of these runs. It covers the true median with at
+    /// least 95% probability when the runs are independent draws from one stable
+    /// distribution, whatever its shape; drift, throttling or warm-up that changes
+    /// over the run breaks that assumption, and so can the time-budgeted stopping
+    /// rule. Separate runs can differ by more than one run's interval suggests.
     pub median_ci_95: [f64; 2],
-    /// False when there are too few runs (n < 6) for a 95% interval; the
-    /// interval is then [min, max].
+    /// True when there were enough runs (n >= 6) to form a 95% interval; the
+    /// interval is otherwise [min, max]. It doesn't check the assumptions above.
     pub ci_valid: bool,
 }
 
-/// Summarize a set of per-run measurements. Order doesn't matter.
+/// Summarize a set of per-run measurements. Order doesn't matter. Non-finite
+/// values (NaN, ±infinity) are not measurements: they're left out and not
+/// counted in `n`.
 pub fn summarize(values: &[f64]) -> Summary {
-    if values.is_empty() {
+    let mut v: Vec<f64> = values.iter().copied().filter(|x| x.is_finite()).collect();
+    if v.is_empty() {
         return Summary { n: 0, median: 0.0, mean: 0.0, std_dev: 0.0, cv_percent: 0.0, min: 0.0, max: 0.0, median_ci_95: [0.0, 0.0], ci_valid: false };
     }
-    let mut v = values.to_vec();
-    v.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    v.sort_by(f64::total_cmp);
     let n = v.len();
-    let median = if n % 2 == 1 { v[n / 2] } else { (v[n / 2 - 1] + v[n / 2]) / 2.0 };
-    let mean = v.iter().sum::<f64>() / n as f64;
-    let std_dev = if n > 1 {
-        (v.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / (n - 1) as f64).sqrt()
-    } else {
-        0.0
-    };
+    // Halve before adding, so two huge values can't overflow their midpoint.
+    let median = if n % 2 == 1 { v[n / 2] } else { v[n / 2 - 1] / 2.0 + v[n / 2] / 2.0 };
+    // Welford's running mean and sum of squares, on values scaled into [-1, 1]
+    // so neither can overflow while the result is still representable.
+    let scale = v.iter().fold(0.0_f64, |m, x| m.max(x.abs()));
+    let scale = if scale > 0.0 { scale } else { 1.0 };
+    let (mut mean_s, mut m2_s) = (0.0_f64, 0.0_f64);
+    for (i, x) in v.iter().enumerate() {
+        let x = x / scale;
+        let d = x - mean_s;
+        mean_s += d / (i + 1) as f64;
+        m2_s += d * (x - mean_s);
+    }
+    let mean = mean_s * scale;
+    let std_dev = if n > 1 { (m2_s / (n - 1) as f64).sqrt() * scale } else { 0.0 };
     let cv_percent = if mean != 0.0 { 100.0 * std_dev / mean.abs() } else { 0.0 };
     let (median_ci_95, ci_valid) = match median_ci_ranks(n) {
         Some((lo, hi)) => ([v[lo - 1], v[hi - 1]], true),
