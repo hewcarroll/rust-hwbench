@@ -46,16 +46,47 @@ fn scoring_is_opt_in_and_monotonic() {
     assert!(calibrate(15.0, &anchors) > calibrate(11.0, &anchors));
 }
 #[test]
-fn score_interval_contains_the_score() {
+fn score_interval_follows_the_median_interval() {
+    // On real hardware: a slow or loaded machine may stop at fewer than 6 runs,
+    // and then there is correctly no interval at all.
     let mut r = cpu::run(CpuConfig {
         matrix_size: Some(128),
         thread_count: Some(1),
     })
     .unwrap();
     apply_score(&mut r);
+    let s = r.score.unwrap();
+    match r.score_ci_95 {
+        Some([lo, hi]) => {
+            assert!(r.median_ci_valid);
+            assert!(lo <= s && s <= hi, "score {s} outside [{lo}, {hi}]");
+        }
+        None => assert!(!r.median_ci_valid, "a valid median interval should give a score interval"),
+    }
+}
+
+#[test]
+fn score_interval_contains_the_score_for_a_valid_interval() {
+    // Deterministic: a payload with a valid median interval.
+    let mut r = rust_hwbench::BenchmarkResultPayload {
+        component_type: "RAM".into(),
+        score: None,
+        score_ci_95: None,
+        metrics: vec![],
+        run_count: 68,
+        warmup_count: 0,
+        median_raw: 27.33,
+        std_dev: 0.03,
+        cv_percent: 0.1,
+        median_ci_95: [27.32, 27.34],
+        median_ci_valid: true,
+        started_at_unix_ms: 0,
+        duration_ms: 0,
+        error: None,
+    };
+    apply_score(&mut r);
     let (s, [lo, hi]) = (r.score.unwrap(), r.score_ci_95.unwrap());
     assert!(lo <= s && s <= hi, "score {s} outside [{lo}, {hi}]");
-    assert!(r.median_ci_95[0] <= r.median_raw && r.median_raw <= r.median_ci_95[1]);
 }
 
 #[test]
