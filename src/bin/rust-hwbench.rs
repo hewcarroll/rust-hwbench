@@ -9,7 +9,7 @@
 
 use rust_hwbench::{
     benchmarks::{cpu, gpu, npu, ram, vram},
-    score, timed, BenchmarkResultPayload, CpuConfig, GpuConfig, NpuConfig, RamConfig, VramConfig,
+    apply_score, timed, BenchmarkResultPayload, CpuConfig, GpuConfig, NpuConfig, RamConfig, VramConfig,
 };
 
 fn main() {
@@ -46,7 +46,7 @@ fn main() {
     let mut run = |label: &str, res: Result<BenchmarkResultPayload, String>| match res {
         Ok(mut r) => {
             if do_score {
-                r.score = score(&r);
+                apply_score(&mut r);
             }
             results.push(r);
         }

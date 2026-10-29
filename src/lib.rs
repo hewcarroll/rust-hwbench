@@ -18,7 +18,7 @@
 //! standard deviation, coefficient of variation and a distribution-free 95%
 //! interval for the median. The [`BenchmarkResultPayload::score`] field is `None`
 //! by default. Mapping a result onto an opinionated 0–10000 scale is opt-in via
-//! [`score`] (or call [`calibrate`] directly against the exported anchor tables,
+//! [`score`] or [`apply_score`] (or call [`calibrate`] directly against the exported anchor tables,
 //! e.g. [`benchmarks::cpu::CPU_ANCHORS`]).
 //!
 //! ## Example
@@ -51,12 +51,29 @@ pub use system::{detect as detect_system, SystemInfo};
 /// The anchor tables are public ([`benchmarks::cpu::CPU_ANCHORS`] etc.) so you
 /// can supply your own and call [`calibrate`] instead.
 pub fn score(result: &BenchmarkResultPayload) -> Option<u64> {
-    let anchors: &[(f64, f64)] = match result.component_type.as_str() {
-        "CPU" => benchmarks::cpu::CPU_ANCHORS,
-        "GPU" => benchmarks::gpu::GPU_ANCHORS,
-        "RAM" => benchmarks::ram::RAM_ANCHORS,
-        "GPU_MEMORY" => benchmarks::vram::VRAM_ANCHORS,
-        _ => return None,
-    };
-    Some(calibrate(result.median_raw, anchors))
+    Some(calibrate(result.median_raw, anchors_for(&result.component_type)?))
+}
+
+/// The score's own 95% interval: each end of `median_ci_95` mapped through the
+/// same calibration as [`score`]. Calibration never decreases, so the interval
+/// contains the score. `None` for component types without a calibrated scale.
+pub fn score_interval(result: &BenchmarkResultPayload) -> Option<[u64; 2]> {
+    let anchors = anchors_for(&result.component_type)?;
+    Some([calibrate(result.median_ci_95[0], anchors), calibrate(result.median_ci_95[1], anchors)])
+}
+
+/// Attach the calibrated score and its interval to a result.
+pub fn apply_score(result: &mut BenchmarkResultPayload) {
+    result.score = score(result);
+    result.score_ci_95 = score_interval(result);
+}
+
+fn anchors_for(component_type: &str) -> Option<&'static [(f64, f64)]> {
+    match component_type {
+        "CPU" => Some(benchmarks::cpu::CPU_ANCHORS),
+        "GPU" => Some(benchmarks::gpu::GPU_ANCHORS),
+        "RAM" => Some(benchmarks::ram::RAM_ANCHORS),
+        "GPU_MEMORY" => Some(benchmarks::vram::VRAM_ANCHORS),
+        _ => None,
+    }
 }

@@ -249,6 +249,7 @@ pub fn run(config: CpuConfig) -> Result<BenchmarkResultPayload, String> {
     Ok(BenchmarkResultPayload {
         component_type: "CPU".to_string(),
         score: None,
+        score_ci_95: None,
         metrics: vec![
             metric("FP32 Single-Core", round2(fp32_single.median), "GFLOPS", "Single-threaded FP32 matrix multiply"),
             metric("FP32 Multi-Core", round2(fp32_multi.median), "GFLOPS", "Aggregate FP32 throughput across all cores"),

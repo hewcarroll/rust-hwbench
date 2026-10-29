@@ -25,6 +25,7 @@ pub fn run(_config: NpuConfig) -> Result<BenchmarkResultPayload, String> {
         Ok(BenchmarkResultPayload {
             component_type: "NPU".to_string(),
             score: None,
+            score_ci_95: None,
             metrics: vec![
                 BenchmarkMetric {
                     name: "Status".to_string(),

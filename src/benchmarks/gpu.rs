@@ -147,6 +147,7 @@ pub async fn run(config: GpuConfig) -> Result<BenchmarkResultPayload, String> {
     Ok(BenchmarkResultPayload {
         component_type: "GPU".to_string(),
         score: None,
+        score_ci_95: None,
         metrics,
         run_count: fp32.n,
         warmup_count: WARMUP,

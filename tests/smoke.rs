@@ -2,7 +2,7 @@
 //! CI). The GPU/VRAM paths require a real adapter and are exercised by the CLI
 //! rather than in CI.
 
-use rust_hwbench::{benchmarks::cpu, benchmarks::ram, calibrate, score, CpuConfig, RamConfig};
+use rust_hwbench::{apply_score, benchmarks::cpu, benchmarks::ram, calibrate, score, CpuConfig, RamConfig};
 
 #[test]
 fn cpu_runs_and_reports_positive_throughput() {
@@ -44,4 +44,16 @@ fn scoring_is_opt_in_and_monotonic() {
     // calibrate is monotonic between anchors.
     let anchors = [(10.0_f64, 1000.0_f64), (20.0, 2000.0)];
     assert!(calibrate(15.0, &anchors) > calibrate(11.0, &anchors));
+}
+#[test]
+fn score_interval_contains_the_score() {
+    let mut r = cpu::run(CpuConfig {
+        matrix_size: Some(128),
+        thread_count: Some(1),
+    })
+    .unwrap();
+    apply_score(&mut r);
+    let (s, [lo, hi]) = (r.score.unwrap(), r.score_ci_95.unwrap());
+    assert!(lo <= s && s <= hi, "score {s} outside [{lo}, {hi}]");
+    assert!(r.median_ci_95[0] <= r.median_raw && r.median_raw <= r.median_ci_95[1]);
 }

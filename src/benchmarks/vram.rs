@@ -226,6 +226,7 @@ pub async fn run(config: VramConfig) -> Result<BenchmarkResultPayload, String> {
     Ok(BenchmarkResultPayload {
         component_type: "GPU_MEMORY".to_string(),
         score: None,
+        score_ci_95: None,
         metrics: vec![
             BenchmarkMetric {
                 name: "Internal Bandwidth".to_string(),

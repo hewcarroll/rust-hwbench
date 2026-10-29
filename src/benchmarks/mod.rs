@@ -21,6 +21,9 @@ pub struct BenchmarkMetric {
 pub struct BenchmarkResultPayload {
     pub component_type: String,
     pub score: Option<u64>,
+    /// The score at each end of `median_ci_95`, on the same scale; set with
+    /// `score` by [`crate::apply_score`]. `None` when there is no calibrated scale.
+    pub score_ci_95: Option<[u64; 2]>,
     pub metrics: Vec<BenchmarkMetric>,
     pub run_count: usize,
     pub warmup_count: usize,
