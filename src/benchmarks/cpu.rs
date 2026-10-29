@@ -244,8 +244,7 @@ pub fn run(config: CpuConfig) -> Result<BenchmarkResultPayload, String> {
         0.0
     };
 
-    // Score stays pinned to single-core FP32 for comparability.
-    let ci = fp32_single.confidence_95();
+    // Score and statistics stay pinned to single-core FP32 for comparability.
 
     Ok(BenchmarkResultPayload {
         component_type: "CPU".to_string(),
@@ -266,8 +265,12 @@ pub fn run(config: CpuConfig) -> Result<BenchmarkResultPayload, String> {
         run_count: fp32_single.values.len(),
         warmup_count: WARMUP,
         median_raw: round2(fp32_single.median),
-        variance: round2(fp32_single.std_dev),
-        confidence_interval: [round2(ci[0]), round2(ci[1])],
+        std_dev: round2(fp32_single.std_dev),
+        cv_percent: (fp32_single.cv_percent * 10.0).round() / 10.0,
+        median_ci_95: [round2(fp32_single.median_ci_95[0]), round2(fp32_single.median_ci_95[1])],
+        median_ci_valid: fp32_single.ci_valid,
+        started_at_unix_ms: 0,
+        duration_ms: 0,
         error: None,
     })
 }

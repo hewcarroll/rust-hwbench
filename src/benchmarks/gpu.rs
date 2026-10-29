@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
-use super::{GpuConfig, BenchmarkResultPayload, BenchmarkMetric};
+use super::{summarize, BenchmarkMetric, BenchmarkResultPayload, GpuConfig, Summary};
 
 const WARMUP: usize = 2;
 const MIN_RUNS: usize = 5;
@@ -83,12 +83,7 @@ fn main(@builtin(global_invocation_id) gid : vec3<u32>) {
 }
 "#;
 
-struct KernelStats {
-    median: f64,
-    std_dev: f64,
-    ci: [f64; 2],
-    runs: usize,
-}
+type KernelStats = Summary;
 
 pub async fn run(config: GpuConfig) -> Result<BenchmarkResultPayload, String> {
     let iterations = config.iterations.unwrap_or(4096);
@@ -153,11 +148,15 @@ pub async fn run(config: GpuConfig) -> Result<BenchmarkResultPayload, String> {
         component_type: "GPU".to_string(),
         score: None,
         metrics,
-        run_count: fp32.runs,
+        run_count: fp32.n,
         warmup_count: WARMUP,
         median_raw: round2(fp32.median),
-        variance: round2(fp32.std_dev),
-        confidence_interval: [round2(fp32.ci[0]), round2(fp32.ci[1])],
+        std_dev: round2(fp32.std_dev),
+        cv_percent: (fp32.cv_percent * 10.0).round() / 10.0,
+        median_ci_95: [round2(fp32.median_ci_95[0]), round2(fp32.median_ci_95[1])],
+        median_ci_valid: fp32.ci_valid,
+        started_at_unix_ms: 0,
+        duration_ms: 0,
         error: None,
     })
 }
@@ -294,21 +293,8 @@ fn run_kernel(
 
     // ops/sec in tera-ops (2 ops per multiply-add iteration, per element)
     let total_ops = (n as f64) * (iterations as f64) * 2.0;
-    let mut tput: Vec<f64> = durations.iter().map(|d| total_ops / d / 1e12).collect();
-    tput.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-
-    let nf = tput.len() as f64;
-    let median = tput[tput.len() / 2];
-    let mean = tput.iter().sum::<f64>() / nf;
-    let std_dev = (tput.iter().map(|t| (t - mean).powi(2)).sum::<f64>() / nf).sqrt();
-    let margin = 1.96 * std_dev / nf.sqrt();
-
-    KernelStats {
-        median,
-        std_dev,
-        ci: [mean - margin, mean + margin],
-        runs: tput.len(),
-    }
+    let tput: Vec<f64> = durations.iter().map(|d| total_ops / d / 1e12).collect();
+    summarize(&tput)
 }
 
 /// FP16 compute test, fully hang-proofed:
@@ -476,19 +462,7 @@ async fn run_f16(
     if tput.is_empty() {
         return None;
     }
-    tput.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-    let nf = tput.len() as f64;
-    let median = tput[tput.len() / 2];
-    let mean = tput.iter().sum::<f64>() / nf;
-    let std_dev = (tput.iter().map(|t| (t - mean).powi(2)).sum::<f64>() / nf).sqrt();
-    let margin = 1.96 * std_dev / nf.sqrt();
-
-    Some(KernelStats {
-        median,
-        std_dev,
-        ci: [mean - margin, mean + margin],
-        runs: tput.len(),
-    })
+    Some(summarize(&tput))
 }
 
 /// Non-blocking wait for the queue's submitted work with a hard timeout.

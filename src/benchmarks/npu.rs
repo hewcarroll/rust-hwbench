@@ -42,8 +42,12 @@ pub fn run(_config: NpuConfig) -> Result<BenchmarkResultPayload, String> {
             run_count: 0,
             warmup_count: 0,
             median_raw: 0.0,
-            variance: 0.0,
-            confidence_interval: [0.0, 0.0],
+            std_dev: 0.0,
+            cv_percent: 0.0,
+            median_ci_95: [0.0, 0.0],
+            median_ci_valid: false,
+            started_at_unix_ms: 0,
+            duration_ms: 0,
             error: Some("No dedicated AI accelerator detected on this system.".to_string()),
         })
     }

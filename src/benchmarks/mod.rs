@@ -24,10 +24,35 @@ pub struct BenchmarkResultPayload {
     pub metrics: Vec<BenchmarkMetric>,
     pub run_count: usize,
     pub warmup_count: usize,
+    /// Median of the primary metric's per-run values, in that metric's unit.
     pub median_raw: f64,
-    pub variance: f64,
-    pub confidence_interval: [f64; 2],
+    /// Sample standard deviation (n - 1) of the same per-run values.
+    pub std_dev: f64,
+    /// `std_dev` as a percentage of the mean, comparable across units.
+    pub cv_percent: f64,
+    /// Distribution-free 95% interval for `median_raw` (order statistics); it
+    /// always contains the median. Equal to [min, max] when there are too few
+    /// runs for a 95% interval, which `median_ci_valid` reports.
+    pub median_ci_95: [f64; 2],
+    pub median_ci_valid: bool,
+    /// When the benchmark started (Unix ms) and how long it took. Set by
+    /// [`timed`]; zero when the caller didn't time the run.
+    pub started_at_unix_ms: u64,
+    pub duration_ms: u64,
     pub error: Option<String>,
+}
+
+/// Run a benchmark and record when it started and how long it took.
+pub fn timed<F: FnOnce() -> Result<BenchmarkResultPayload, String>>(f: F) -> Result<BenchmarkResultPayload, String> {
+    let started_at_unix_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0);
+    let start = Instant::now();
+    let mut result = f()?;
+    result.started_at_unix_ms = started_at_unix_ms;
+    result.duration_ms = start.elapsed().as_millis() as u64;
+    Ok(result)
 }
 
 // Config types from the frontend
@@ -95,42 +120,88 @@ pub fn measure_timed<F: FnMut() -> f64>(
 }
 
 /// Compute summary statistics from a set of per-iteration measurements.
-fn stats_from(mut values: Vec<f64>) -> MeasurementStats {
-    values.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-
-    let n = values.len() as f64;
-    let mean = values.iter().sum::<f64>() / n;
-    let variance = values.iter().map(|v| (v - mean).powi(2)).sum::<f64>() / n;
-    let std_dev = variance.sqrt();
-    let median = values[values.len() / 2];
-
-    MeasurementStats {
-        median,
-        mean,
-        std_dev,
-        min: values[0],
-        max: values[values.len() - 1],
-        values,
-    }
+fn stats_from(values: Vec<f64>) -> MeasurementStats {
+    let summary = summarize(&values);
+    MeasurementStats { summary, values }
 }
 
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
 pub struct MeasurementStats {
-    pub median: f64,
-    pub mean: f64,
-    pub std_dev: f64,
-    pub min: f64,
-    pub max: f64,
+    pub summary: Summary,
     pub values: Vec<f64>,
 }
 
-impl MeasurementStats {
-    pub fn confidence_95(&self) -> [f64; 2] {
-        let n = self.values.len() as f64;
-        let margin = 1.96 * self.std_dev / n.sqrt();
-        [self.mean - margin, self.mean + margin]
+impl std::ops::Deref for MeasurementStats {
+    type Target = Summary;
+    fn deref(&self) -> &Summary {
+        &self.summary
     }
+}
+
+/// Summary statistics of one metric's per-run values, all in that metric's unit.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Summary {
+    pub n: usize,
+    /// The middle value; the mean of the two middle values when `n` is even.
+    pub median: f64,
+    pub mean: f64,
+    /// Sample standard deviation (n - 1); 0 for fewer than two values.
+    pub std_dev: f64,
+    /// `std_dev / mean` as a percentage; 0 when the mean is 0.
+    pub cv_percent: f64,
+    pub min: f64,
+    pub max: f64,
+    /// Distribution-free 95% interval for the median from order statistics. It
+    /// makes no assumption about the shape of the runs, so it holds when they
+    /// are skewed (throttling, scheduler noise), and it always contains `median`.
+    pub median_ci_95: [f64; 2],
+    /// False when there are too few runs (n < 6) for a 95% interval; the
+    /// interval is then [min, max].
+    pub ci_valid: bool,
+}
+
+/// Summarize a set of per-run measurements. Order doesn't matter.
+pub fn summarize(values: &[f64]) -> Summary {
+    if values.is_empty() {
+        return Summary { n: 0, median: 0.0, mean: 0.0, std_dev: 0.0, cv_percent: 0.0, min: 0.0, max: 0.0, median_ci_95: [0.0, 0.0], ci_valid: false };
+    }
+    let mut v = values.to_vec();
+    v.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    let n = v.len();
+    let median = if n % 2 == 1 { v[n / 2] } else { (v[n / 2 - 1] + v[n / 2]) / 2.0 };
+    let mean = v.iter().sum::<f64>() / n as f64;
+    let std_dev = if n > 1 {
+        (v.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / (n - 1) as f64).sqrt()
+    } else {
+        0.0
+    };
+    let cv_percent = if mean != 0.0 { 100.0 * std_dev / mean.abs() } else { 0.0 };
+    let (median_ci_95, ci_valid) = match median_ci_ranks(n) {
+        Some((lo, hi)) => ([v[lo - 1], v[hi - 1]], true),
+        None => ([v[0], v[n - 1]], false),
+    };
+    Summary { n, median, mean, std_dev, cv_percent, min: v[0], max: v[n - 1], median_ci_95, ci_valid }
+}
+
+/// 1-based ranks `(l, n - l + 1)` of the order statistics bounding a 95%
+/// interval for the median: `l` is the largest rank with P(X <= l - 1) <= 0.025
+/// for X ~ Binomial(n, 1/2), so the interval covers the median with probability
+/// at least 95% whatever the distribution. `None` when no rank qualifies (n < 6).
+/// The binomial terms are built in log space, so large `n` doesn't underflow.
+fn median_ci_ranks(n: usize) -> Option<(usize, usize)> {
+    let nf = n as f64;
+    let mut log_pmf = nf * 0.5_f64.ln(); // log P(X = 0)
+    let mut cdf = 0.0;
+    let mut l = 0;
+    for k in 0..n {
+        cdf += log_pmf.exp(); // P(X <= k)
+        if cdf > 0.025 {
+            break;
+        }
+        l = k + 1;
+        log_pmf += ((nf - k as f64) / (k as f64 + 1.0)).ln();
+    }
+    if l == 0 { None } else { Some((l, n - l + 1)) }
 }
 
 /// Map a raw measurement to the 0-10000 calibrated scale.

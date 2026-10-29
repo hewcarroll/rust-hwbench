@@ -1,5 +1,5 @@
 use std::time::Instant;
-use super::{VramConfig, BenchmarkResultPayload, BenchmarkMetric};
+use super::{summarize, BenchmarkMetric, BenchmarkResultPayload, Summary, VramConfig};
 
 const WARMUP: usize = 2;
 const RUNS: usize = 5;
@@ -160,10 +160,8 @@ pub async fn run(config: VramConfig) -> Result<BenchmarkResultPayload, String> {
         }
     }
 
-    internal_durations.sort_by(|a, b| a.partial_cmp(b).unwrap());
-    let internal_median = internal_durations[internal_durations.len() / 2];
     // Read + Write = 2x buffer
-    let internal_gbps = (buffer_bytes as f64 * 2.0) / internal_median / 1e9;
+    let internal = bandwidth_summary(buffer_bytes as f64 * 2.0, &internal_durations);
 
     // --- Upload bandwidth (CPU -> GPU) ---
     let upload_buf = device.create_buffer(&wgpu::BufferDescriptor {
@@ -186,9 +184,7 @@ pub async fn run(config: VramConfig) -> Result<BenchmarkResultPayload, String> {
         }
     }
 
-    upload_durations.sort_by(|a, b| a.partial_cmp(b).unwrap());
-    let upload_median = upload_durations[upload_durations.len() / 2];
-    let upload_gbps = buffer_bytes as f64 / upload_median / 1e9;
+    let upload = bandwidth_summary(buffer_bytes as f64, &upload_durations);
 
     // --- Download bandwidth (GPU -> CPU) ---
     let readback_buf = device.create_buffer(&wgpu::BufferDescriptor {
@@ -225,23 +221,7 @@ pub async fn run(config: VramConfig) -> Result<BenchmarkResultPayload, String> {
         }
     }
 
-    download_durations.sort_by(|a, b| a.partial_cmp(b).unwrap());
-    let download_median = download_durations[download_durations.len() / 2];
-    let download_gbps = buffer_bytes as f64 / download_median / 1e9;
-
-    // Stats for internal bandwidth
-    let mean = internal_durations.iter().sum::<f64>() / internal_durations.len() as f64;
-    let variance = internal_durations.iter().map(|d| (d - mean).powi(2)).sum::<f64>() / internal_durations.len() as f64;
-    let std_dev = variance.sqrt();
-
-    let gbps_values: Vec<f64> = internal_durations
-        .iter()
-        .map(|d| (buffer_bytes as f64 * 2.0) / d / 1e9)
-        .collect();
-    let mean_gbps = gbps_values.iter().sum::<f64>() / gbps_values.len() as f64;
-    let gbps_std = (gbps_values.iter().map(|g| (g - mean_gbps).powi(2)).sum::<f64>() / gbps_values.len() as f64).sqrt();
-    let margin = 1.96 * gbps_std / (gbps_values.len() as f64).sqrt();
-
+    let download = bandwidth_summary(buffer_bytes as f64, &download_durations);
 
     Ok(BenchmarkResultPayload {
         component_type: "GPU_MEMORY".to_string(),
@@ -249,19 +229,19 @@ pub async fn run(config: VramConfig) -> Result<BenchmarkResultPayload, String> {
         metrics: vec![
             BenchmarkMetric {
                 name: "Internal Bandwidth".to_string(),
-                value: round2(internal_gbps),
+                value: round2(internal.median),
                 unit: "GB/s".to_string(),
                 description: "GPU-to-GPU memory copy via compute shader".to_string(),
             },
             BenchmarkMetric {
                 name: "Upload Bandwidth".to_string(),
-                value: round2(upload_gbps),
+                value: round2(upload.median),
                 unit: "GB/s".to_string(),
                 description: "CPU-to-GPU write bandwidth".to_string(),
             },
             BenchmarkMetric {
                 name: "Download Bandwidth".to_string(),
-                value: round2(download_gbps),
+                value: round2(download.median),
                 unit: "GB/s".to_string(),
                 description: "GPU-to-CPU readback bandwidth".to_string(),
             },
@@ -272,13 +252,25 @@ pub async fn run(config: VramConfig) -> Result<BenchmarkResultPayload, String> {
                 description: "Test buffer size".to_string(),
             },
         ],
-        run_count: internal_durations.len(),
+        run_count: internal.n,
         warmup_count: WARMUP,
-        median_raw: round2(internal_gbps),
-        variance: round2(std_dev),
-        confidence_interval: [round2(mean_gbps - margin), round2(mean_gbps + margin)],
+        median_raw: round2(internal.median),
+        std_dev: round2(internal.std_dev),
+        cv_percent: (internal.cv_percent * 10.0).round() / 10.0,
+        median_ci_95: [round2(internal.median_ci_95[0]), round2(internal.median_ci_95[1])],
+        median_ci_valid: internal.ci_valid,
+        started_at_unix_ms: 0,
+        duration_ms: 0,
         error: None,
     })
+}
+
+/// Summarize transfers as bandwidth: each run's duration (seconds) becomes
+/// GB/s first, so the median, spread and interval all describe the same GB/s
+/// sample. (0.1.0 took the spread over the durations, which rounded to 0.)
+pub fn bandwidth_summary(bytes_per_run: f64, durations_secs: &[f64]) -> Summary {
+    let gbps: Vec<f64> = durations_secs.iter().filter(|d| **d > 0.0).map(|d| bytes_per_run / d / 1e9).collect();
+    summarize(&gbps)
 }
 
 fn round2(v: f64) -> f64 {

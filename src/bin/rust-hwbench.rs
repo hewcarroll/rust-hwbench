@@ -9,7 +9,7 @@
 
 use rust_hwbench::{
     benchmarks::{cpu, gpu, npu, ram, vram},
-    score, BenchmarkResultPayload, CpuConfig, GpuConfig, NpuConfig, RamConfig, VramConfig,
+    score, timed, BenchmarkResultPayload, CpuConfig, GpuConfig, NpuConfig, RamConfig, VramConfig,
 };
 
 fn main() {
@@ -54,19 +54,19 @@ fn main() {
     };
 
     if want("cpu") {
-        run("cpu", cpu::run(CpuConfig::default()));
+        run("cpu", timed(|| cpu::run(CpuConfig::default())));
     }
     if want("gpu") {
-        run("gpu", pollster::block_on(gpu::run(GpuConfig::default())));
+        run("gpu", timed(|| pollster::block_on(gpu::run(GpuConfig::default()))));
     }
     if want("ram") {
-        run("ram", ram::run(RamConfig::default()));
+        run("ram", timed(|| ram::run(RamConfig::default())));
     }
     if want("vram") {
-        run("vram", pollster::block_on(vram::run(VramConfig::default())));
+        run("vram", timed(|| pollster::block_on(vram::run(VramConfig::default()))));
     }
     if want("npu") {
-        run("npu", npu::run(NpuConfig::default()));
+        run("npu", timed(|| npu::run(NpuConfig::default())));
     }
 
     if json {
@@ -105,8 +105,15 @@ fn print_table(system: Option<&rust_hwbench::SystemInfo>, results: &[BenchmarkRe
         }
         if r.run_count > 0 {
             println!(
-                "  [{} runs, median {:.2}, ±{:.2}, 95% CI {:.2}..{:.2}]",
-                r.run_count, r.median_raw, r.variance, r.confidence_interval[0], r.confidence_interval[1]
+                "  [{} runs in {:.1} s, median {:.2}, sd {:.2} ({:.1}%), 95% CI of the median {:.2}..{:.2}{}]",
+                r.run_count,
+                r.duration_ms as f64 / 1000.0,
+                r.median_raw,
+                r.std_dev,
+                r.cv_percent,
+                r.median_ci_95[0],
+                r.median_ci_95[1],
+                if r.median_ci_valid { "" } else { " (too few runs for 95%)" }
             );
         }
         if let Some(err) = &r.error {

@@ -56,6 +56,27 @@ the 0–10000 scale, call [`score`] (uses the built-in anchor tables) or call
 `calibrate(raw, &anchors)` with your own anchors. The anchor tables
 (`benchmarks::cpu::CPU_ANCHORS`, etc.) are public.
 
+### Statistics
+
+Each result summarizes the per-run values of its primary metric (single-core FP32
+for the CPU, FP32 compute for the GPU, Triad for RAM, internal bandwidth for VRAM),
+in that metric's own unit:
+
+- `medianRaw`: the median, averaging the two middle runs when the count is even
+- `stdDev` and `cvPercent`: the sample standard deviation (n − 1), and the same
+  thing as a percentage of the mean
+- `medianCi95`: a distribution-free 95% confidence interval **for the median**,
+  from order statistics. It assumes nothing about the shape of the runs, so it
+  holds when they're skewed by throttling or scheduler noise, and it always
+  contains the median. With fewer than 6 runs no such interval exists; it is then
+  the min–max range and `medianCiValid` is `false`.
+- `startedAtUnixMs` and `durationMs`: filled in when the run is wrapped in `timed`
+  (the CLI does this)
+
+0.1.0 reported the interval of the *mean* next to the median, called the standard
+deviation `variance`, and took VRAM's spread over durations in seconds. 0.2.0
+fixes all three, and renames the fields accordingly.
+
 ## Notes & caveats
 
 - Throughput figures are **relative** measurements for comparing machines and

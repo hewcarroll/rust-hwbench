@@ -136,8 +136,6 @@ pub fn run(config: RamConfig) -> Result<BenchmarkResultPayload, String> {
         TARGET_SECS,
     );
 
-    let ci = triad_stats.confidence_95();
-
     Ok(BenchmarkResultPayload {
         component_type: "RAM".to_string(),
         score: None,
@@ -176,8 +174,12 @@ pub fn run(config: RamConfig) -> Result<BenchmarkResultPayload, String> {
         run_count: triad_stats.values.len(),
         warmup_count: WARMUP,
         median_raw: round2(triad_stats.median),
-        variance: round2(triad_stats.std_dev),
-        confidence_interval: [round2(ci[0]), round2(ci[1])],
+        std_dev: round2(triad_stats.std_dev),
+        cv_percent: (triad_stats.cv_percent * 10.0).round() / 10.0,
+        median_ci_95: [round2(triad_stats.median_ci_95[0]), round2(triad_stats.median_ci_95[1])],
+        median_ci_valid: triad_stats.ci_valid,
+        started_at_unix_ms: 0,
+        duration_ms: 0,
         error: None,
     })
 }

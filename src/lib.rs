@@ -14,7 +14,9 @@
 //! ## Raw-first, scoring opt-in
 //!
 //! Each `run` returns the measured throughput/bandwidth plus summary statistics
-//! ([`MeasurementStats`]); the [`BenchmarkResultPayload::score`] field is `None`
+//! of the primary metric's per-run values ([`Summary`]): the median, sample
+//! standard deviation, coefficient of variation and a distribution-free 95%
+//! interval for the median. The [`BenchmarkResultPayload::score`] field is `None`
 //! by default. Mapping a result onto an opinionated 0–10000 scale is opt-in via
 //! [`score`] (or call [`calibrate`] directly against the exported anchor tables,
 //! e.g. [`benchmarks::cpu::CPU_ANCHORS`]).
@@ -37,8 +39,8 @@ pub mod benchmarks;
 pub mod system;
 
 pub use benchmarks::{
-    calibrate, measure_timed, BenchmarkMetric, BenchmarkResultPayload, CpuConfig, GpuConfig,
-    MeasurementStats, NpuConfig, RamConfig, VramConfig,
+    calibrate, measure_timed, summarize, timed, BenchmarkMetric, BenchmarkResultPayload, CpuConfig,
+    GpuConfig, MeasurementStats, NpuConfig, RamConfig, Summary, VramConfig,
 };
 pub use system::{detect as detect_system, SystemInfo};
 
